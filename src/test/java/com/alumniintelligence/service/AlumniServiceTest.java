@@ -292,4 +292,21 @@ class AlumniServiceTest {
         assertThat(list).hasSize(1);
         assertThat(list.get(0).name()).isEqualTo("Alice");
     }
+
+    @Test
+    @DisplayName("recoverStrandedJobs transitions PENDING and RUNNING jobs to FAILED on startup")
+    void recoverStrandedJobs_shouldTransitionStrandedJobsToFailed() {
+        SearchJob pending = SearchJob.builder().id(1L).status(JobStatus.PENDING).build();
+        SearchJob running = SearchJob.builder().id(2L).status(JobStatus.RUNNING).build();
+        when(jobRepository.findByStatusIn(anyCollection())).thenReturn(List.of(pending, running));
+
+        int count = alumniService.recoverStrandedJobs();
+
+        assertThat(count).isEqualTo(2);
+        assertThat(pending.getStatus()).isEqualTo(JobStatus.FAILED);
+        assertThat(pending.getErrorMessage()).contains("interrupted");
+        assertThat(running.getStatus()).isEqualTo(JobStatus.FAILED);
+        assertThat(running.getErrorMessage()).contains("interrupted");
+        verify(jobRepository, times(2)).save(any(SearchJob.class));
+    }
 }

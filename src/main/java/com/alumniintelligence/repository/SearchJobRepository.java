@@ -16,6 +16,9 @@ public interface SearchJobRepository extends JpaRepository<SearchJob, Long> {
     /** Lists jobs in a specific status, ordered newest-first. */
     List<SearchJob> findByStatusOrderByCreatedAtDesc(JobStatus status);
 
+    /** Finds jobs matching any of the given statuses (e.g., PENDING or RUNNING for crash recovery). */
+    List<SearchJob> findByStatusIn(java.util.Collection<JobStatus> statuses);
+
     /** Paginated job history. */
     Page<SearchJob> findAllByOrderByCreatedAtDesc(Pageable pageable);
 }

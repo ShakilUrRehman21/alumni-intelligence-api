@@ -15,6 +15,8 @@ import com.alumniintelligence.repository.AlumniProfileRepository;
 import com.alumniintelligence.repository.SearchJobRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Async;
@@ -263,6 +265,29 @@ public class AlumniService {
         }
         return jobRepository.findAllByOrderByCreatedAtDesc(pageable)
                 .map(mapper::toJobResponse);
+    }
+
+    // ----------------------------------------------------------------
+    // Startup recovery mechanism (Item 8: stranded job recovery)
+    // ----------------------------------------------------------------
+
+    /**
+     * Recovers stranded jobs upon application startup.
+     * Any job left in PENDING or RUNNING status from a previous JVM instance/restart
+     * is safely transitioned to FAILED so clients are not left polling forever.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    @Transactional
+    public int recoverStrandedJobs() {
+        List<SearchJob> stranded = jobRepository.findByStatusIn(List.of(JobStatus.PENDING, JobStatus.RUNNING));
+        if (!stranded.isEmpty()) {
+            log.warn("Found {} stranded search jobs from a previous shutdown. Transitioning to FAILED.", stranded.size());
+            for (SearchJob job : stranded) {
+                job.markFailed("Job interrupted by application shutdown or restart");
+                jobRepository.save(job);
+            }
+        }
+        return stranded.size();
     }
 
     // ----------------------------------------------------------------
