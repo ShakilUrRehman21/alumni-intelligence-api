@@ -2,7 +2,7 @@
 	"info": {
 		"_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
 		"name": "Alumni Intelligence API",
-		"description": "Production-ready Postman collection for Alumni Intelligence API.\n\nSearches LinkedIn alumni profiles by university, designation, and optional graduation year using PhantomBuster integration and persists records in PostgreSQL.",
+		"description": "Production-ready Postman collection for Alumni Intelligence API conforming to the assignment specification.\n\nSearches LinkedIn alumni profiles by university, designation, and optional graduation year using PhantomBuster integration and persists records in PostgreSQL.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"variable": [
@@ -27,21 +27,29 @@
 			"name": "1. Search Operations",
 			"item": [
 				{
-					"name": "Trigger Alumni Search (Async Job)",
+					"name": "POST /api/alumni/search — Synchronous Search (Assignment Contract)",
 					"event": [
 						{
 							"listen": "test",
 							"script": {
 								"exec": [
-									"pm.test(\"Status code is 202 Accepted\", function () {",
-									"    pm.response.to.have.status(202);",
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
 									"});",
 									"",
-									"pm.test(\"Response contains jobId and initial status\", function () {",
+									"pm.test(\"Response has status 'success' and 'data' array\", function () {",
 									"    var jsonData = pm.response.json();",
-									"    pm.expect(jsonData).to.have.property('jobId');",
-									"    pm.expect(jsonData.status).to.be.oneOf(['PENDING', 'RUNNING', 'COMPLETED']);",
-									"    pm.collectionVariables.set(\"jobId\", jsonData.jobId);",
+									"    pm.expect(jsonData.status).to.eql(\"success\");",
+									"    pm.expect(jsonData.data).to.be.an('array');",
+									"    if (jsonData.data.length > 0) {",
+									"        var first = jsonData.data[0];",
+									"        pm.expect(first).to.have.property('name');",
+									"        pm.expect(first).to.have.property('currentRole');",
+									"        pm.expect(first).to.have.property('university');",
+									"        if (first.id) {",
+									"            pm.collectionVariables.set(\"profileId\", first.id);",
+									"        }",
+									"    }",
 									"});"
 								],
 								"type": "text/javascript"
@@ -61,23 +69,73 @@
 							"raw": "{\n    \"university\": \"Stanford University\",\n    \"designation\": \"Software Engineer\",\n    \"passoutYear\": 2022\n}"
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/v1/alumni/search",
+							"raw": "{{baseUrl}}/api/alumni/search",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
-								"v1",
 								"alumni",
 								"search"
 							]
 						},
-						"description": "Triggers an asynchronous search job on PhantomBuster and saves the job record."
+						"description": "Primary assignment requirement: accepts university, designation, optional passoutYear, queries PhantomBuster, saves profiles to PostgreSQL, and returns the list of alumni profiles."
 					},
 					"response": []
 				},
 				{
-					"name": "Trigger Alumni Search - Validation Failure (Blank University)",
+					"name": "POST /api/alumni/search/async — Asynchronous Background Search Job",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 202 Accepted\", function () {",
+									"    pm.response.to.have.status(202);",
+									"});",
+									"",
+									"pm.test(\"Response contains jobId and initial status\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.status).to.eql(\"success\");",
+									"    pm.expect(jsonData.data).to.have.property('id');",
+									"    pm.expect(jsonData.data.status).to.be.oneOf(['PENDING', 'RUNNING', 'COMPLETED']);",
+									"    pm.collectionVariables.set(\"jobId\", jsonData.data.id);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"university\": \"MIT\",\n    \"designation\": \"Data Scientist\",\n    \"passoutYear\": 2021\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/alumni/search/async",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"alumni",
+								"search",
+								"async"
+							]
+						},
+						"description": "Triggers an asynchronous background search job and returns HTTP 202 with job tracking metadata."
+					},
+					"response": []
+				},
+				{
+					"name": "POST /api/alumni/search — Validation Failure (Blank University)",
 					"event": [
 						{
 							"listen": "test",
@@ -87,12 +145,12 @@
 									"    pm.response.to.have.status(400);",
 									"});",
 									"",
-									"pm.test(\"Error response specifies university validation error\", function () {",
+									"pm.test(\"Error response contains validation errors array\", function () {",
 									"    var jsonData = pm.response.json();",
-									"    pm.expect(jsonData.status).to.eql(400);",
-									"    pm.expect(jsonData.fieldErrors).to.be.an('array');",
-									"    var universityError = jsonData.fieldErrors.find(e => e.field === 'university');",
-									"    pm.expect(universityError).to.not.be.undefined;",
+									"    pm.expect(jsonData.status).to.eql(\"error\");",
+									"    pm.expect(jsonData.errors).to.be.an('array');",
+									"    var hasUniv = jsonData.errors.some(e => e.includes('university'));",
+									"    pm.expect(hasUniv).to.be.true;",
 									"});"
 								],
 								"type": "text/javascript"
@@ -112,23 +170,22 @@
 							"raw": "{\n    \"university\": \"\",\n    \"designation\": \"Software Engineer\",\n    \"passoutYear\": 2022\n}"
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/v1/alumni/search",
+							"raw": "{{baseUrl}}/api/alumni/search",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
-								"v1",
 								"alumni",
 								"search"
 							]
 						},
-						"description": "Demonstrates 400 Bad Request error handling when mandatory fields are omitted or blank."
+						"description": "Verifies 400 Bad Request error handling when mandatory university field is blank."
 					},
 					"response": []
 				},
 				{
-					"name": "Trigger Alumni Search - Validation Failure (Invalid Year)",
+					"name": "POST /api/alumni/search — Validation Failure (Invalid Year)",
 					"event": [
 						{
 							"listen": "test",
@@ -138,10 +195,11 @@
 									"    pm.response.to.have.status(400);",
 									"});",
 									"",
-									"pm.test(\"Field error indicates passoutYear out of bounds\", function () {",
+									"pm.test(\"Error array indicates passoutYear boundary violation\", function () {",
 									"    var jsonData = pm.response.json();",
-									"    var yearError = jsonData.fieldErrors.find(e => e.field === 'passoutYear');",
-									"    pm.expect(yearError).to.not.be.undefined;",
+									"    pm.expect(jsonData.status).to.eql(\"error\");",
+									"    var hasYear = jsonData.errors.some(e => e.includes('passoutYear'));",
+									"    pm.expect(hasYear).to.be.true;",
 									"});"
 								],
 								"type": "text/javascript"
@@ -161,13 +219,12 @@
 							"raw": "{\n    \"university\": \"Harvard University\",\n    \"designation\": \"Product Manager\",\n    \"passoutYear\": 1820\n}"
 						},
 						"url": {
-							"raw": "{{baseUrl}}/api/v1/alumni/search",
+							"raw": "{{baseUrl}}/api/alumni/search",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
-								"v1",
 								"alumni",
 								"search"
 							]
@@ -179,10 +236,10 @@
 			]
 		},
 		{
-			"name": "2. Job Status & Job Results",
+			"name": "2. Alumni Profiles Directory",
 			"item": [
 				{
-					"name": "Get Search Job Status",
+					"name": "GET /api/alumni/all — Get All Saved Alumni Profiles (Assignment Contract)",
 					"event": [
 						{
 							"listen": "test",
@@ -192,93 +249,12 @@
 									"    pm.response.to.have.status(200);",
 									"});",
 									"",
-									"pm.test(\"Status has valid enum value\", function () {",
+									"pm.test(\"Response data is a direct JSON array of profiles\", function () {",
 									"    var jsonData = pm.response.json();",
-									"    pm.expect(jsonData.status).to.be.oneOf(['PENDING', 'RUNNING', 'COMPLETED', 'FAILED']);",
-									"});"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{baseUrl}}/api/v1/alumni/search/{{jobId}}/status",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"v1",
-								"alumni",
-								"search",
-								"{{jobId}}",
-								"status"
-							]
-						},
-						"description": "Checks the current execution status and result count of a search job."
-					},
-					"response": []
-				},
-				{
-					"name": "Get Search Job Status - Not Found (404)",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test(\"Status code is 404 Not Found\", function () {",
-									"    pm.response.to.have.status(404);",
-									"});",
-									"",
-									"pm.test(\"Error body contains not found message\", function () {",
-									"    var jsonData = pm.response.json();",
-									"    pm.expect(jsonData.status).to.eql(404);",
-									"});"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{baseUrl}}/api/v1/alumni/search/999999/status",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"v1",
-								"alumni",
-								"search",
-								"999999",
-								"status"
-							]
-						},
-						"description": "Validates proper 404 response when querying a non-existent search job ID."
-					},
-					"response": []
-				},
-				{
-					"name": "Get Profiles for Specific Job",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test(\"Status code is 200 OK\", function () {",
-									"    pm.response.to.have.status(200);",
-									"});",
-									"",
-									"pm.test(\"Response is an array of profiles\", function () {",
-									"    var jsonData = pm.response.json();",
-									"    pm.expect(jsonData).to.be.an('array');",
-									"    if (jsonData.length > 0) {",
-									"        pm.collectionVariables.set(\"profileId\", jsonData[0].id);",
+									"    pm.expect(jsonData.status).to.eql(\"success\");",
+									"    pm.expect(jsonData.data).to.be.an('array');",
+									"    if (jsonData.data.length > 0) {",
+									"        pm.collectionVariables.set(\"profileId\", jsonData.data[0].id);",
 									"    }",
 									"});"
 								],
@@ -290,30 +266,22 @@
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "{{baseUrl}}/api/v1/alumni/search/{{jobId}}/results",
+							"raw": "{{baseUrl}}/api/alumni/all",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
-								"v1",
 								"alumni",
-								"search",
-								"{{jobId}}",
-								"results"
+								"all"
 							]
 						},
-						"description": "Retrieves all alumni profiles discovered and persisted during a specific job execution."
+						"description": "Assignment endpoint: returns the complete list of saved alumni profiles from PostgreSQL."
 					},
 					"response": []
-				}
-			]
-		},
-		{
-			"name": "3. Alumni Profiles Directory",
-			"item": [
+				},
 				{
-					"name": "List All Alumni Profiles (Paginated)",
+					"name": "GET /api/alumni — List Profiles (Paginated & Sorted)",
 					"event": [
 						{
 							"listen": "test",
@@ -323,14 +291,11 @@
 									"    pm.response.to.have.status(200);",
 									"});",
 									"",
-									"pm.test(\"Response contains pagination metadata\", function () {",
+									"pm.test(\"Response contains pagination envelope\", function () {",
 									"    var jsonData = pm.response.json();",
-									"    pm.expect(jsonData).to.have.property('content');",
-									"    pm.expect(jsonData).to.have.property('totalElements');",
-									"    pm.expect(jsonData).to.have.property('totalPages');",
-									"    if (jsonData.content.length > 0) {",
-									"        pm.collectionVariables.set(\"profileId\", jsonData.content[0].id);",
-									"    }",
+									"    pm.expect(jsonData.status).to.eql(\"success\");",
+									"    pm.expect(jsonData.data).to.have.property('content');",
+									"    pm.expect(jsonData.data).to.have.property('totalElements');",
 									"});"
 								],
 								"type": "text/javascript"
@@ -341,13 +306,12 @@
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "{{baseUrl}}/api/v1/alumni?page=0&size=10&sort=name,asc",
+							"raw": "{{baseUrl}}/api/alumni?page=0&size=10",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
-								"v1",
 								"alumni"
 							],
 							"query": [
@@ -358,19 +322,15 @@
 								{
 									"key": "size",
 									"value": "10"
-								},
-								{
-									"key": "sort",
-									"value": "name,asc"
 								}
 							]
 						},
-						"description": "Lists all persisted alumni profiles with page number, page size, and sorting controls."
+						"description": "Paginated directory listing of persisted profiles."
 					},
 					"response": []
 				},
 				{
-					"name": "Filter Alumni Profiles (University & Designation)",
+					"name": "GET /api/alumni/search — Filter Profiles (University, Role, Year)",
 					"event": [
 						{
 							"listen": "test",
@@ -380,9 +340,10 @@
 									"    pm.response.to.have.status(200);",
 									"});",
 									"",
-									"pm.test(\"Filtered profiles match criteria\", function () {",
+									"pm.test(\"Filtered results returned in page envelope\", function () {",
 									"    var jsonData = pm.response.json();",
-									"    pm.expect(jsonData.content).to.be.an('array');",
+									"    pm.expect(jsonData.status).to.eql(\"success\");",
+									"    pm.expect(jsonData.data.content).to.be.an('array');",
 									"});"
 								],
 								"type": "text/javascript"
@@ -393,14 +354,14 @@
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "{{baseUrl}}/api/v1/alumni?university=Stanford&designation=Engineer&page=0&size=20",
+							"raw": "{{baseUrl}}/api/alumni/search?university=Stanford&currentRole=Engineer&page=0&size=10",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
-								"v1",
-								"alumni"
+								"alumni",
+								"search"
 							],
 							"query": [
 								{
@@ -408,7 +369,7 @@
 									"value": "Stanford"
 								},
 								{
-									"key": "designation",
+									"key": "currentRole",
 									"value": "Engineer"
 								},
 								{
@@ -417,55 +378,16 @@
 								},
 								{
 									"key": "size",
-									"value": "20"
+									"value": "10"
 								}
 							]
 						},
-						"description": "Demonstrates case-insensitive substring search across university and current designation."
+						"description": "Searches the local PostgreSQL database with case-insensitive filters and pagination."
 					},
 					"response": []
 				},
 				{
-					"name": "Filter Alumni Profiles (Passout Year)",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"pm.test(\"Status code is 200 OK\", function () {",
-									"    pm.response.to.have.status(200);",
-									"});"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{baseUrl}}/api/v1/alumni?passoutYear=2022",
-							"host": [
-								"{{baseUrl}}"
-							],
-							"path": [
-								"api",
-								"v1",
-								"alumni"
-							],
-							"query": [
-								{
-									"key": "passoutYear",
-									"value": "2022"
-								}
-							]
-						},
-						"description": "Filters alumni records by graduation / passout year."
-					},
-					"response": []
-				},
-				{
-					"name": "Get Alumni Profile by ID",
+					"name": "GET /api/alumni/{id} — Get Profile by ID",
 					"event": [
 						{
 							"listen": "test",
@@ -475,11 +397,11 @@
 									"    pm.response.to.have.status(200);",
 									"});",
 									"",
-									"pm.test(\"Profile details are populated\", function () {",
+									"pm.test(\"Profile attributes are returned\", function () {",
 									"    var jsonData = pm.response.json();",
-									"    pm.expect(jsonData).to.have.property('id');",
-									"    pm.expect(jsonData).to.have.property('name');",
-									"    pm.expect(jsonData).to.have.property('profileUrl');",
+									"    pm.expect(jsonData.status).to.eql(\"success\");",
+									"    pm.expect(jsonData.data).to.have.property('id');",
+									"    pm.expect(jsonData.data).to.have.property('name');",
 									"});"
 								],
 								"type": "text/javascript"
@@ -490,23 +412,22 @@
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "{{baseUrl}}/api/v1/alumni/{{profileId}}",
+							"raw": "{{baseUrl}}/api/alumni/{{profileId}}",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
-								"v1",
 								"alumni",
 								"{{profileId}}"
 							]
 						},
-						"description": "Retrieves comprehensive details for a specific alumni record by its primary key ID."
+						"description": "Retrieves comprehensive details for a single alumni profile by ID."
 					},
 					"response": []
 				},
 				{
-					"name": "Get Alumni Profile - Not Found (404)",
+					"name": "GET /api/alumni/{id} — Not Found (404)",
 					"event": [
 						{
 							"listen": "test",
@@ -516,9 +437,9 @@
 									"    pm.response.to.have.status(404);",
 									"});",
 									"",
-									"pm.test(\"Error details match ProblemDetails schema\", function () {",
+									"pm.test(\"Error status is 'error'\", function () {",
 									"    var jsonData = pm.response.json();",
-									"    pm.expect(jsonData.status).to.eql(404);",
+									"    pm.expect(jsonData.status).to.eql(\"error\");",
 									"});"
 								],
 								"type": "text/javascript"
@@ -529,25 +450,112 @@
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "{{baseUrl}}/api/v1/alumni/999999",
+							"raw": "{{baseUrl}}/api/alumni/999999",
 							"host": [
 								"{{baseUrl}}"
 							],
 							"path": [
 								"api",
-								"v1",
 								"alumni",
 								"999999"
 							]
 						},
-						"description": "Validates 404 response when querying a non-existent alumni profile ID."
+						"description": "Validates 404 response on querying an unknown alumni profile ID."
 					},
 					"response": []
 				}
 			]
 		},
 		{
-			"name": "4. Observability & API Documentation",
+			"name": "3. Search Jobs Lifecycle",
+			"item": [
+				{
+					"name": "GET /api/alumni/jobs/{jobId} — Get Job Status",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Job status enum is valid\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.status).to.eql(\"success\");",
+									"    pm.expect(jsonData.data.status).to.be.oneOf(['PENDING', 'RUNNING', 'COMPLETED', 'FAILED']);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/alumni/jobs/{{jobId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"alumni",
+								"jobs",
+								"{{jobId}}"
+							]
+						},
+						"description": "Polls status and execution metadata of a search job."
+					},
+					"response": []
+				},
+				{
+					"name": "GET /api/alumni/jobs — List All Search Jobs",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200 OK\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/alumni/jobs?page=0&size=10",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"alumni",
+								"jobs"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "0"
+								},
+								{
+									"key": "size",
+									"value": "10"
+								}
+							]
+						},
+						"description": "Lists all submitted search jobs with execution statuses and timestamps."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "4. Observability & Documentation",
 			"item": [
 				{
 					"name": "Actuator Health Check",
@@ -582,7 +590,7 @@
 								"health"
 							]
 						},
-						"description": "Spring Boot Actuator liveness and readiness probe endpoint."
+						"description": "Spring Boot Actuator liveness and readiness probe."
 					},
 					"response": []
 				},
@@ -597,7 +605,7 @@
 									"    pm.response.to.have.status(200);",
 									"});",
 									"",
-									"pm.test(\"OpenAPI document version present\", function () {",
+									"pm.test(\"OpenAPI version 3.0 present\", function () {",
 									"    var jsonData = pm.response.json();",
 									"    pm.expect(jsonData).to.have.property('openapi');",
 									"});"
@@ -619,7 +627,7 @@
 								"api-docs"
 							]
 						},
-						"description": "Machine-readable OpenAPI 3.0 specification definition."
+						"description": "OpenAPI 3.0 JSON specification."
 					},
 					"response": []
 				}

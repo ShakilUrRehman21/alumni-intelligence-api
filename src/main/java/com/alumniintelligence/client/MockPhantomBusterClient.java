@@ -19,9 +19,6 @@ import java.util.List;
  *
  * <p>All returned profile URLs are fictional and will not resolve.
  */
-@Component
-@Primary
-@ConditionalOnMissingBean(PhantomBusterClientImpl.class)
 @Slf4j
 public class MockPhantomBusterClient implements PhantomBusterClient {
 

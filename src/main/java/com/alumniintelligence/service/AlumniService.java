@@ -45,11 +45,57 @@ public class AlumniService {
     private final AlumniMapper            mapper;
 
     // ----------------------------------------------------------------
-    // Search initiation
+    // ----------------------------------------------------------------
+    // Synchronous search (Primary assignment requirement)
     // ----------------------------------------------------------------
 
     /**
-     * Creates a {@link SearchJob} in PENDING state, triggers the async execution,
+     * Executes the alumni search synchronously: triggers PhantomBuster,
+     * persists/deduplicates profiles in PostgreSQL, records the SearchJob,
+     * and returns the list of matching alumni profiles.
+     */
+    @Transactional
+    public List<AlumniProfileResponse> searchAlumni(AlumniSearchRequest request) {
+        SearchJob job = SearchJob.builder()
+                .university(request.university().strip())
+                .designation(request.designation().strip())
+                .passoutYear(request.passoutYear())
+                .build();
+        job.markRunning(null);
+        job = jobRepository.save(job);
+
+        try {
+            List<PhantomBusterProfile> rawProfiles = phantomBusterClient.searchAlumni(
+                    job.getUniversity(),
+                    job.getDesignation(),
+                    job.getPassoutYear()
+            );
+
+            List<AlumniProfile> savedEntities = persistAndReturnProfiles(rawProfiles, job);
+            job.markCompleted(savedEntities.size());
+            jobRepository.save(job);
+
+            return savedEntities.stream()
+                    .map(mapper::toProfileResponse)
+                    .toList();
+
+        } catch (PhantomBusterException e) {
+            job.markFailed(e.getMessage());
+            jobRepository.save(job);
+            throw e;
+        } catch (Exception e) {
+            job.markFailed(e.getMessage());
+            jobRepository.save(job);
+            throw new PhantomBusterException("Search execution failed: " + e.getMessage(), e);
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // Asynchronous search initiation (Optional background job API)
+    // ----------------------------------------------------------------
+
+    /**
+     * Creates a {@link SearchJob} in PENDING state, triggers async execution,
      * and immediately returns the job response (HTTP 202).
      */
     @Transactional
@@ -61,10 +107,9 @@ public class AlumniService {
                 .build();
 
         job = jobRepository.save(job);
-        log.info("Created search job {} for university='{}', designation='{}'",
+        log.info("Created async search job {} for university='{}', designation='{}'",
                 job.getId(), job.getUniversity(), job.getDesignation());
 
-        // Fire-and-forget async execution
         executeSearch(job.getId());
         return mapper.toJobResponse(job);
     }
@@ -83,7 +128,7 @@ public class AlumniService {
         SearchJob job = jobRepository.findById(jobId)
                 .orElseThrow(() -> new ResourceNotFoundException("SearchJob not found: " + jobId));
 
-        job.markRunning(null);   // containerId will be set by real client
+        job.markRunning(null);
         jobRepository.save(job);
 
         try {
@@ -112,28 +157,26 @@ public class AlumniService {
     // Profile persistence (upsert)
     // ----------------------------------------------------------------
 
-    /**
-     * Saves or updates profiles.  Skips records without a profile URL (no
-     * stable deduplication key).  Returns the count of records written.
-     */
-    private int persistProfiles(List<PhantomBusterProfile> rawProfiles, SearchJob job) {
-        int count = 0;
+    private List<AlumniProfile> persistAndReturnProfiles(List<PhantomBusterProfile> rawProfiles, SearchJob job) {
+        List<AlumniProfile> saved = new java.util.ArrayList<>();
         for (PhantomBusterProfile raw : rawProfiles) {
             try {
-                count += upsertProfile(raw, job) ? 1 : 0;
+                AlumniProfile profile = upsertAndReturnProfile(raw, job);
+                if (profile != null) {
+                    saved.add(profile);
+                }
             } catch (Exception e) {
                 log.warn("Failed to persist profile '{}': {}", raw.fullName(), e.getMessage());
             }
         }
-        return count;
+        return saved;
     }
 
-    /**
-     * Upserts a single profile.
-     *
-     * @return {@code true} if a record was written (insert or update)
-     */
-    private boolean upsertProfile(PhantomBusterProfile raw, SearchJob job) {
+    private int persistProfiles(List<PhantomBusterProfile> rawProfiles, SearchJob job) {
+        return persistAndReturnProfiles(rawProfiles, job).size();
+    }
+
+    private AlumniProfile upsertAndReturnProfile(PhantomBusterProfile raw, SearchJob job) {
         String url = normalizeUrl(raw.profileUrl());
 
         AlumniProfile profile;
@@ -142,7 +185,6 @@ public class AlumniService {
                     .orElse(AlumniProfile.builder().build());
             profile.setLinkedinProfileUrl(url);
         } else {
-            // No URL — always insert (no deduplication possible)
             profile = AlumniProfile.builder().build();
         }
 
@@ -154,13 +196,25 @@ public class AlumniService {
         profile.setPassoutYear(raw.graduationYear() != null ? raw.graduationYear() : job.getPassoutYear());
         profile.setSearchJob(job);
 
-        profileRepository.save(profile);
-        return true;
+        return profileRepository.save(profile);
+    }
+
+    private boolean upsertProfile(PhantomBusterProfile raw, SearchJob job) {
+        return upsertAndReturnProfile(raw, job) != null;
     }
 
     // ----------------------------------------------------------------
     // Read operations
     // ----------------------------------------------------------------
+
+    /** Retrieves all saved profiles as a list (matching assignment contract). */
+    @Transactional(readOnly = true)
+    public List<AlumniProfileResponse> getAllProfilesList() {
+        return profileRepository.findAll(org.springframework.data.domain.Sort.by("createdAt").descending())
+                .stream()
+                .map(mapper::toProfileResponse)
+                .toList();
+    }
 
     /** Retrieves all profiles with pagination. */
     @Transactional(readOnly = true)

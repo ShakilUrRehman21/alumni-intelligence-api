@@ -246,4 +246,50 @@ class AlumniServiceTest {
         assertThat(result.getTotalElements()).isEqualTo(1);
         assertThat(result.getContent().get(0).name()).isEqualTo("Alice");
     }
+
+    @Test
+    @DisplayName("searchAlumni executes synchronously, saves profiles, and returns response list")
+    void searchAlumni_shouldExecuteSynchronouslyAndReturnProfiles() {
+        SearchJob job = SearchJob.builder().id(10L).university("University of XYZ").designation("Software Engineer").passoutYear(2020).build();
+        when(jobRepository.save(any(SearchJob.class))).thenReturn(job);
+
+        PhantomBusterProfile raw = new PhantomBusterProfile(
+                "John Doe", "Software Engineer", "Acme", "University of XYZ",
+                "Boston", "Headline", "https://linkedin.com/in/johndoe", 2020);
+        when(phantomBusterClient.searchAlumni(any(), any(), any()))
+                .thenReturn(List.of(raw));
+
+        AlumniProfile savedProfile = AlumniProfile.builder()
+                .id(1L).name("John Doe").linkedinProfileUrl("https://linkedin.com/in/johndoe").build();
+        when(profileRepository.findByLinkedinProfileUrl("https://linkedin.com/in/johndoe"))
+                .thenReturn(Optional.empty());
+        when(profileRepository.save(any(AlumniProfile.class))).thenReturn(savedProfile);
+
+        AlumniProfileResponse expectedResponse = new AlumniProfileResponse(
+                1L, "John Doe", "Software Engineer", "MIT",
+                "Boston", "Headline", "https://linkedin.com/in/johndoe", 2020, 10L, null);
+        when(mapper.toProfileResponse(savedProfile)).thenReturn(expectedResponse);
+
+        List<AlumniProfileResponse> results = alumniService.searchAlumni(validRequest);
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).name()).isEqualTo("John Doe");
+        assertThat(job.getStatus()).isEqualTo(JobStatus.COMPLETED);
+        verify(profileRepository).save(any(AlumniProfile.class));
+    }
+
+    @Test
+    @DisplayName("getAllProfilesList returns direct list of profiles")
+    void getAllProfilesList_shouldReturnList() {
+        AlumniProfile profile = AlumniProfile.builder().id(1L).name("Alice").build();
+        when(profileRepository.findAll(any(org.springframework.data.domain.Sort.class)))
+                .thenReturn(List.of(profile));
+        AlumniProfileResponse resp = new AlumniProfileResponse(1L, "Alice", null, "MIT", null, null, null, null, null, null);
+        when(mapper.toProfileResponse(profile)).thenReturn(resp);
+
+        List<AlumniProfileResponse> list = alumniService.getAllProfilesList();
+
+        assertThat(list).hasSize(1);
+        assertThat(list.get(0).name()).isEqualTo("Alice");
+    }
 }

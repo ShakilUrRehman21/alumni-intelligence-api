@@ -63,7 +63,7 @@ public class SearchJob {
     @Column(name = "completed_at")
     private OffsetDateTime completedAt;
 
-    @OneToMany(mappedBy = "searchJob", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "searchJob", cascade = {CascadeType.PERSIST, CascadeType.MERGE})
     @Builder.Default
     private List<AlumniProfile> profiles = new ArrayList<>();
 

@@ -39,10 +39,8 @@ import java.util.List;
  *   <li>{@code LINKEDIN_SESSION_COOKIE} env var — the {@code li_at} cookie value
  * </ul>
  */
-@Component
 @Slf4j
 @RequiredArgsConstructor
-@ConditionalOnProperty(name = "phantombuster.api-key", matchIfMissing = false, havingValue = "")
 public class PhantomBusterClientImpl implements PhantomBusterClient {
 
     private static final String HEADER_KEY   = "X-Phantombuster-Key";
@@ -69,9 +67,10 @@ public class PhantomBusterClientImpl implements PhantomBusterClient {
         String containerId = launchAgent(searchUrl);
         log.info("PhantomBuster container launched: {}", containerId);
 
-        JsonNode output = pollForOutput(containerId);
-        log.info("PhantomBuster agent {} completed", props.agentId());
+        pollForCompletion(containerId);
+        log.info("PhantomBuster container {} completed successfully", containerId);
 
+        JsonNode output = fetchResultObject(containerId);
         return parseOutput(output, university);
     }
 
@@ -142,8 +141,8 @@ public class PhantomBusterClientImpl implements PhantomBusterClient {
         }
     }
 
-    /** Polls GET /agents/fetch-output until the agent finishes. */
-    private JsonNode pollForOutput(String containerId) {
+    /** Polls GET /containers/fetch until the container finishes. */
+    private void pollForCompletion(String containerId) {
         int attempts = 0;
 
         while (attempts < props.maxPollAttempts()) {
@@ -152,26 +151,30 @@ public class PhantomBusterClientImpl implements PhantomBusterClient {
                 Thread.sleep(props.pollIntervalMs());
 
                 HttpRequest request = HttpRequest.newBuilder()
-                        .uri(URI.create(props.baseUrl() + "/agents/fetch-output?id=" + props.agentId()))
+                        .uri(URI.create(props.baseUrl() + "/containers/fetch?id=" + containerId))
                         .header(HEADER_KEY, props.apiKey())
+                        .header("Accept", JSON_MIME)
                         .GET()
                         .timeout(Duration.ofMillis(props.readTimeoutMs()))
                         .build();
 
                 HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-                handleHttpError(response, "fetch output");
+                handleHttpError(response, "fetch container status");
 
                 JsonNode json = objectMapper.readTree(response.body());
                 String status = json.path("status").asText("");
+                String exitMessage = json.path("exitMessage").asText("");
 
-                log.debug("Poll attempt {}/{} — status: {}", attempts, props.maxPollAttempts(), status);
+                log.debug("Poll attempt {}/{} for container {} — status: {}, exitMessage: {}",
+                        attempts, props.maxPollAttempts(), containerId, status, exitMessage);
 
-                if ("finished".equalsIgnoreCase(status)) {
-                    return json.path("output");
+                if ("finished".equalsIgnoreCase(status) || "finished".equalsIgnoreCase(exitMessage)) {
+                    return;
                 }
-                if ("error".equalsIgnoreCase(status)) {
-                    String errMsg = json.path("message").asText("Unknown PhantomBuster error");
-                    throw new PhantomBusterException("PhantomBuster agent failed: " + errMsg);
+                if ("error".equalsIgnoreCase(status) || "error".equalsIgnoreCase(exitMessage)
+                        || "killed".equalsIgnoreCase(status)) {
+                    String errMsg = json.has("error") ? json.path("error").asText() : exitMessage;
+                    throw new PhantomBusterException("PhantomBuster container execution failed: " + errMsg);
                 }
 
             } catch (PhantomBusterException e) {
@@ -180,16 +183,52 @@ public class PhantomBusterClientImpl implements PhantomBusterClient {
                 Thread.currentThread().interrupt();
                 throw new PhantomBusterException("Polling interrupted", e);
             } catch (IOException e) {
-                log.warn("Poll attempt {} failed: {}", attempts, e.getMessage());
+                log.warn("Poll attempt {} failed for container {}: {}", attempts, containerId, e.getMessage());
             }
         }
 
         throw new PhantomBusterException(
-                "PhantomBuster agent did not finish within " + props.maxPollAttempts() + " polling attempts");
+                "PhantomBuster container " + containerId + " did not finish within " + props.maxPollAttempts() + " polling attempts");
+    }
+
+    /** Fetches the structured result object produced by the container. */
+    private JsonNode fetchResultObject(String containerId) {
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(props.baseUrl() + "/containers/fetch-result-object?id=" + containerId))
+                    .header(HEADER_KEY, props.apiKey())
+                    .header("Accept", JSON_MIME)
+                    .GET()
+                    .timeout(Duration.ofMillis(props.readTimeoutMs()))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            handleHttpError(response, "fetch result object");
+
+            JsonNode root = objectMapper.readTree(response.body());
+            if (root.has("resultObject")) {
+                JsonNode resObj = root.get("resultObject");
+                if (resObj.isTextual()) {
+                    try {
+                        return objectMapper.readTree(resObj.asText());
+                    } catch (Exception ex) {
+                        return resObj;
+                    }
+                }
+                return resObj;
+            }
+            return root;
+
+        } catch (PhantomBusterException e) {
+            throw e;
+        } catch (IOException | InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new PhantomBusterException("Failed to fetch PhantomBuster container result: " + e.getMessage(), e);
+        }
     }
 
     /**
-     * Parses the output JSON node (which is an array of profile objects from
+     * Parses the output JSON node (array of profile objects from
      * the LinkedIn Search Export Phantom) into {@link PhantomBusterProfile} records.
      */
     private List<PhantomBusterProfile> parseOutput(JsonNode output, String university) {
@@ -202,15 +241,24 @@ public class PhantomBusterClientImpl implements PhantomBusterClient {
 
         for (JsonNode node : output) {
             try {
+                String profileUrl = firstNonBlank(node, "profileUrl", "linkedinUrl", "url");
+                String fullName = firstNonBlank(node, "fullName", "name");
+                String jobTitle = firstNonBlank(node, "jobTitle", "title", "currentRole", "job", "headline");
+                String company = firstNonBlank(node, "company", "currentCompany");
+                String school = firstNonBlank(node, "school", "university");
+                String location = firstNonBlank(node, "location");
+                String headline = firstNonBlank(node, "headline", "jobTitle", "title");
+                Integer gradYear = parseYear(firstNonBlank(node, "graduationYear", "passoutYear"));
+
                 profiles.add(new PhantomBusterProfile(
-                        node.path("fullName").asText(null),
-                        node.path("jobTitle").asText(null),
-                        node.path("company").asText(null),
-                        node.path("school").asText(university),   // fall back to queried university
-                        node.path("location").asText(null),
-                        node.path("headline").asText(null),
-                        node.path("profileUrl").asText(null),
-                        parseYear(node.path("graduationYear").asText(null))
+                        fullName,
+                        jobTitle,
+                        company,
+                        school != null ? school : university,
+                        location,
+                        headline,
+                        profileUrl,
+                        gradYear
                 ));
             } catch (Exception e) {
                 log.warn("Skipping malformed PhantomBuster profile row: {}", e.getMessage());
@@ -219,6 +267,18 @@ public class PhantomBusterClientImpl implements PhantomBusterClient {
 
         log.info("Parsed {} profiles from PhantomBuster output", profiles.size());
         return profiles;
+    }
+
+    private static String firstNonBlank(JsonNode node, String... fieldNames) {
+        for (String field : fieldNames) {
+            if (node.hasNonNull(field)) {
+                String text = node.path(field).asText("").strip();
+                if (!text.isBlank()) {
+                    return text;
+                }
+            }
+        }
+        return null;
     }
 
     private void handleHttpError(HttpResponse<String> response, String operation) {

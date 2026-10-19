@@ -22,6 +22,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 /**
  * REST controller for alumni profile search and retrieval.
  *
@@ -38,32 +40,58 @@ public class AlumniController {
     private final AlumniService alumniService;
 
     // ----------------------------------------------------------------
-    // POST /api/alumni/search
+    // POST /api/alumni/search (Primary assignment endpoint)
     // ----------------------------------------------------------------
 
     @PostMapping("/search")
     @Operation(
-            summary = "Trigger an alumni search",
-            description = "Initiates a PhantomBuster-powered LinkedIn search. "
-                    + "Returns HTTP 202 with the search job ID. "
-                    + "Poll GET /api/alumni/jobs/{jobId} for completion status."
+            summary = "Search Alumni Profiles (Assignment Endpoint)",
+            description = "Accepts university name, designation, and optional pass-out year, queries PhantomBuster, persists retrieved profiles in PostgreSQL, and returns the list of alumni profiles."
     )
-    public ResponseEntity<ApiResponse<SearchJobResponse>> searchAlumni(
+    public ResponseEntity<ApiResponse<List<AlumniProfileResponse>>> searchAlumni(
+            @Valid @RequestBody AlumniSearchRequest request) {
+
+        List<AlumniProfileResponse> profiles = alumniService.searchAlumni(request);
+        return ResponseEntity.ok(ApiResponse.success(profiles));
+    }
+
+    // ----------------------------------------------------------------
+    // POST /api/alumni/search/async (Background execution endpoint)
+    // ----------------------------------------------------------------
+
+    @PostMapping("/search/async")
+    @Operation(
+            summary = "Trigger an asynchronous alumni search job",
+            description = "Initiates a background PhantomBuster-powered LinkedIn search job. Returns HTTP 202 with the search job ID. Poll GET /api/alumni/jobs/{jobId} for status."
+    )
+    public ResponseEntity<ApiResponse<SearchJobResponse>> searchAlumniAsync(
             @Valid @RequestBody AlumniSearchRequest request) {
 
         SearchJobResponse job = alumniService.initiateSearch(request);
         return ResponseEntity.status(HttpStatus.ACCEPTED)
-                .body(ApiResponse.success(
-                        "Search initiated. Check job status for results.", job));
+                .body(ApiResponse.success("Search job initiated. Check job status for results.", job));
     }
 
     // ----------------------------------------------------------------
-    // GET /api/alumni/all
+    // GET /api/alumni/all (Assignment endpoint)
     // ----------------------------------------------------------------
 
     @GetMapping("/all")
-    @Operation(summary = "Get all saved alumni profiles", description = "Returns paginated list of all persisted profiles.")
-    public ResponseEntity<ApiResponse<Page<AlumniProfileResponse>>> getAllProfiles(
+    @Operation(
+            summary = "Get all saved alumni profiles (Assignment Endpoint)",
+            description = "Returns the list of all saved alumni profiles from PostgreSQL."
+    )
+    public ResponseEntity<ApiResponse<List<AlumniProfileResponse>>> getAllProfiles() {
+        return ResponseEntity.ok(ApiResponse.success(alumniService.getAllProfilesList()));
+    }
+
+    // ----------------------------------------------------------------
+    // GET /api/alumni (Paginated directory)
+    // ----------------------------------------------------------------
+
+    @GetMapping
+    @Operation(summary = "List saved alumni profiles (Paginated)", description = "Returns paginated list of persisted profiles.")
+    public ResponseEntity<ApiResponse<Page<AlumniProfileResponse>>> getPaginatedProfiles(
             @Parameter(description = "Page number (0-based)") @RequestParam(defaultValue = "0") @Min(0) int page,
             @Parameter(description = "Page size (max 100)")   @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
 

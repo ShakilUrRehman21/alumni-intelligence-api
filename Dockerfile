@@ -2,8 +2,8 @@
 FROM eclipse-temurin:21-jre-alpine AS runtime
 WORKDIR /app
 
-# Non-root user for security
-RUN addgroup -S spring && adduser -S spring -G spring
+# Install curl for container health check, and add non-root user for security
+RUN apk add --no-cache curl && addgroup -S spring && adduser -S spring -G spring
 USER spring:spring
 
 COPY target/alumni-intelligence-api-*.jar app.jar

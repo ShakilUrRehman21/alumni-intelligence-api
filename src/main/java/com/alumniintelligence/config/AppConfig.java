@@ -1,5 +1,11 @@
 package com.alumniintelligence.config;
 
+import com.alumniintelligence.client.MockPhantomBusterClient;
+import com.alumniintelligence.client.PhantomBusterClient;
+import com.alumniintelligence.client.PhantomBusterClientImpl;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -24,5 +30,18 @@ public class AppConfig {
                 .version(HttpClient.Version.HTTP_1_1)
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .build();
+    }
+
+    @Bean
+    @ConditionalOnExpression("!'${phantombuster.api-key:}'.trim().isEmpty()")
+    public PhantomBusterClient realPhantomBusterClient(
+            PhantomBusterProperties props, HttpClient httpClient, ObjectMapper objectMapper) {
+        return new PhantomBusterClientImpl(props, httpClient, objectMapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(PhantomBusterClient.class)
+    public PhantomBusterClient mockPhantomBusterClient() {
+        return new MockPhantomBusterClient();
     }
 }

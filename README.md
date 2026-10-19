@@ -131,9 +131,9 @@ See [`.env.example`](.env.example) for the full template.
 
 ## API Reference
 
-### POST `/api/alumni/search`
+### POST `/api/alumni/search` (Primary Assignment Endpoint)
 
-Triggers a PhantomBuster LinkedIn alumni search.
+Synchronously triggers a LinkedIn alumni search via PhantomBuster, deduplicates and persists profiles in PostgreSQL, and returns the profile list matching the assignment specification.
 
 **Request:**
 ```json
@@ -144,11 +144,40 @@ Triggers a PhantomBuster LinkedIn alumni search.
 }
 ```
 
+**Response (200 OK):**
+```json
+{
+  "status": "success",
+  "data": [
+    {
+      "name": "John Doe",
+      "currentRole": "Software Engineer",
+      "university": "University of XYZ",
+      "location": "New York, NY",
+      "linkedinHeadline": "Passionate Software Engineer at XYZ Corp",
+      "passoutYear": 2020
+    },
+    {
+      "name": "Jane Smith",
+      "currentRole": "Data Scientist",
+      "university": "University of XYZ",
+      "location": "San Francisco, CA",
+      "linkedinHeadline": "Data Scientist | AI Enthusiast",
+      "passoutYear": 2019
+    }
+  ]
+}
+```
+
+### POST `/api/alumni/search/async` (Background Job API)
+
+Asynchronously launches a search job and returns immediately with tracking metadata.
+
 **Response (202 Accepted):**
 ```json
 {
   "status": "success",
-  "message": "Search initiated. Check job status for results.",
+  "message": "Search job initiated. Check job status for results.",
   "data": {
     "id": 1,
     "university": "University of XYZ",
@@ -157,25 +186,26 @@ Triggers a PhantomBuster LinkedIn alumni search.
     "status": "PENDING",
     "resultCount": 0,
     "createdAt": "2024-01-01T12:00:00Z"
-  },
-  "timestamp": "2024-01-01T12:00:00Z"
+  }
 }
 ```
 
-### GET `/api/alumni/all`
+### GET `/api/alumni/all` (Assignment Endpoint)
 
-Returns all persisted alumni profiles (paginated).
+Returns all saved alumni profiles from PostgreSQL as a list.
 
+### GET `/api/alumni` (Paginated Directory)
+
+Returns persisted alumni profiles with page number, size, and sorting controls.
 **Query params:** `page` (default 0), `size` (default 20, max 100)
 
 ### GET `/api/alumni/{id}`
 
-Single profile by database ID.
+Retrieves a single profile by database primary key ID.
 
 ### GET `/api/alumni/search`
 
-Filter saved profiles.
-
+Filters persisted profiles by criteria.
 **Query params:** `university`, `currentRole`, `passoutYear`, `page`, `size`
 
 ### GET `/api/alumni/jobs/{jobId}`

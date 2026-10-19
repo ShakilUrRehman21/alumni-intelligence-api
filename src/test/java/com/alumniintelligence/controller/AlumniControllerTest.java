@@ -45,14 +45,36 @@ class AlumniControllerTest {
     // ----------------------------------------------------------------
 
     @Test
-    @DisplayName("POST /api/alumni/search — valid request returns 202 Accepted")
-    void postSearch_validRequest_returns202() throws Exception {
+    @DisplayName("POST /api/alumni/search — valid request returns 200 OK with profiles list")
+    void postSearch_validRequest_returns200() throws Exception {
+        AlumniProfileResponse profile = new AlumniProfileResponse(
+                1L, "John Doe", "Software Engineer", "University of XYZ",
+                "New York, NY", "Headline", "https://linkedin.com/in/johndoe",
+                2020, 1L, OffsetDateTime.now());
+        when(alumniService.searchAlumni(any())).thenReturn(List.of(profile));
+
+        mockMvc.perform(post("/api/alumni/search")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "university", "University of XYZ",
+                                "designation", "Software Engineer",
+                                "passoutYear", 2020
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("success"))
+                .andExpect(jsonPath("$.data[0].name").value("John Doe"))
+                .andExpect(jsonPath("$.data[0].currentRole").value("Software Engineer"));
+    }
+
+    @Test
+    @DisplayName("POST /api/alumni/search/async — valid request returns 202 Accepted with job metadata")
+    void postSearchAsync_validRequest_returns202() throws Exception {
         SearchJobResponse job = new SearchJobResponse(
                 1L, "University of XYZ", "Software Engineer", 2020,
                 JobStatus.PENDING, 0, null, OffsetDateTime.now(), null);
         when(alumniService.initiateSearch(any())).thenReturn(job);
 
-        mockMvc.perform(post("/api/alumni/search")
+        mockMvc.perform(post("/api/alumni/search/async")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "university", "University of XYZ",
@@ -132,15 +154,35 @@ class AlumniControllerTest {
     // ----------------------------------------------------------------
 
     @Test
-    @DisplayName("GET /api/alumni/all — returns 200 with profile page")
+    @DisplayName("GET /api/alumni/all — returns 200 with direct profile list")
     void getAllProfiles_returns200() throws Exception {
+        AlumniProfileResponse profile = new AlumniProfileResponse(
+                1L, "John Doe", "Software Engineer", "MIT",
+                "New York", "Headline", "https://linkedin.com/in/johndoe",
+                2020, 1L, OffsetDateTime.now());
+        when(alumniService.getAllProfilesList()).thenReturn(List.of(profile));
+
+        mockMvc.perform(get("/api/alumni/all"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("success"))
+                .andExpect(jsonPath("$.data[0].name").value("John Doe"))
+                .andExpect(jsonPath("$.data[0].currentRole").value("Software Engineer"));
+    }
+
+    // ----------------------------------------------------------------
+    // GET /api/alumni (Paginated)
+    // ----------------------------------------------------------------
+
+    @Test
+    @DisplayName("GET /api/alumni — returns 200 with paginated profile page")
+    void getPaginatedProfiles_returns200() throws Exception {
         AlumniProfileResponse profile = new AlumniProfileResponse(
                 1L, "John Doe", "Software Engineer", "MIT",
                 "New York", "Headline", "https://linkedin.com/in/johndoe",
                 2020, 1L, OffsetDateTime.now());
         when(alumniService.getAllProfiles(any())).thenReturn(new PageImpl<>(List.of(profile)));
 
-        mockMvc.perform(get("/api/alumni/all"))
+        mockMvc.perform(get("/api/alumni"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("success"))
                 .andExpect(jsonPath("$.data.content[0].name").value("John Doe"))
