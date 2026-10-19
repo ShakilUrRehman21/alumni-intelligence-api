@@ -1,0 +1,56 @@
+name: CI — Build & Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: alumnidb_test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build and run tests
+        run: mvn -B verify --no-transfer-progress
+        env:
+          # Testcontainers manages its own DB; this env var is only for non-TC tests
+          DB_URL: jdbc:postgresql://localhost:5432/alumnidb_test
+          DB_USERNAME: test
+          DB_PASSWORD: test
+          PHANTOMBUSTER_API_KEY: ""
+          PHANTOMBUSTER_AGENT_ID: ""
+          LINKEDIN_SESSION_COOKIE: ""
+
+      - name: Upload test reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports
+          path: target/surefire-reports/
+          retention-days: 7

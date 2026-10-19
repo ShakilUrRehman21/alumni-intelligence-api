@@ -1,0 +1,27 @@
+spring:
+  datasource:
+    url: jdbc:tc:postgresql:16:///alumnidb_test
+    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+    username: test
+    password: test
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+phantombuster:
+  api-key: test-api-key
+  agent-id: test-agent-id
+  linkedin-session-cookie: test-cookie
+  base-url: http://localhost:9999
+  connect-timeout-ms: 3000
+  read-timeout-ms: 5000
+
+logging:
+  level:
+    com.alumniintelligence: DEBUG

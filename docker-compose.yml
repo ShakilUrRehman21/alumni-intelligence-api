@@ -1,0 +1,46 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: alumni_postgres
+    environment:
+      POSTGRES_DB: alumnidb
+      POSTGRES_USER: ${DB_USERNAME:-alumni_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-alumni_pass}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-alumni_user} -d alumnidb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: alumni_api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/alumnidb
+      DB_USERNAME: ${DB_USERNAME:-alumni_user}
+      DB_PASSWORD: ${DB_PASSWORD:-alumni_pass}
+      PHANTOMBUSTER_API_KEY: ${PHANTOMBUSTER_API_KEY:-}
+      PHANTOMBUSTER_AGENT_ID: ${PHANTOMBUSTER_AGENT_ID:-}
+      LINKEDIN_SESSION_COOKIE: ${LINKEDIN_SESSION_COOKIE:-}
+      SPRING_PROFILES_ACTIVE: prod
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  postgres_data:
