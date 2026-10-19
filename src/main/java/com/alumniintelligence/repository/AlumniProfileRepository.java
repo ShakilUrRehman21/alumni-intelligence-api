@@ -35,8 +35,8 @@ public interface AlumniProfileRepository extends JpaRepository<AlumniProfile, Lo
      */
     @Query("""
             SELECT a FROM AlumniProfile a
-            WHERE (:university IS NULL OR LOWER(a.university) = LOWER(:university))
-              AND (:currentRole IS NULL OR LOWER(a.currentRole) LIKE LOWER(CONCAT('%', :currentRole, '%')))
+            WHERE (CAST(:university AS string) IS NULL OR LOWER(a.university) = LOWER(CAST(:university AS string)))
+              AND (CAST(:currentRole AS string) IS NULL OR LOWER(a.currentRole) LIKE LOWER(CONCAT('%', CAST(:currentRole AS string), '%')))
               AND (:passoutYear IS NULL OR a.passoutYear = :passoutYear)
             """)
     Page<AlumniProfile> findByFilters(

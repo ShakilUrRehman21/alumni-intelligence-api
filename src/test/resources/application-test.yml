@@ -1,9 +1,9 @@
 spring:
   datasource:
-    url: jdbc:tc:postgresql:16:///alumnidb_test
-    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
-    username: test
-    password: test
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/alumnidb}
+    driver-class-name: org.postgresql.Driver
+    username: ${DB_USERNAME:alumni_user}
+    password: ${DB_PASSWORD:alumni_pass}
 
   jpa:
     hibernate:
