@@ -6,7 +6,7 @@
 CREATE TABLE alumni_profiles (
     id                    BIGSERIAL PRIMARY KEY,
     name                  VARCHAR(255),
-    current_role          VARCHAR(255),
+    current_designation   VARCHAR(255),
     university            VARCHAR(255) NOT NULL,
     location              VARCHAR(255),
     linkedin_headline     TEXT,
@@ -21,8 +21,8 @@ CREATE TABLE alumni_profiles (
 );
 
 -- Index for common filter queries
-CREATE INDEX idx_alumni_university    ON alumni_profiles (LOWER(university));
-CREATE INDEX idx_alumni_current_role  ON alumni_profiles (LOWER(current_role));
+CREATE INDEX idx_alumni_university            ON alumni_profiles (LOWER(university));
+CREATE INDEX idx_alumni_current_designation   ON alumni_profiles (LOWER(current_designation));
 CREATE INDEX idx_alumni_passout_year  ON alumni_profiles (passout_year);
 CREATE INDEX idx_alumni_search_job    ON alumni_profiles (search_job_id);
 CREATE INDEX idx_alumni_created       ON alumni_profiles (created_at DESC);

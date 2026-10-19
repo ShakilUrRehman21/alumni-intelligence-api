@@ -40,7 +40,7 @@ public class AlumniProfile {
     @Column(length = 255)
     private String name;
 
-    @Column(name = "current_role", length = 255)
+    @Column(name = "current_designation", length = 255)
     private String currentRole;
 
     @Column(nullable = false, length = 255)
